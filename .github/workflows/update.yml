@@ -1,0 +1,45 @@
+name: Update Homebrew Formulae
+
+on:
+  repository_dispatch:
+    types: [release-published]
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Cask
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          INTEL_SHA256: ${{ github.event.client_payload.intel_sha256 }}
+          ARM_SHA256: ${{ github.event.client_payload.arm_sha256 }}
+        run: |
+          sed -i "s/version \".*\"/version \"$VERSION\"/" Casks/notepadx.rb
+          # Update Intel SHA256 (first sha256 line)
+          awk -v sha="$INTEL_SHA256" '
+            /on_intel/,/end/ { if (/sha256/) { sub(/sha256 ".*"/, "sha256 \""sha"\"") } }
+            { print }
+          ' Casks/notepadx.rb > Casks/notepadx.rb.tmp && mv Casks/notepadx.rb.tmp Casks/notepadx.rb
+          # Update ARM SHA256
+          awk -v sha="$ARM_SHA256" '
+            /on_arm/,/end/ { if (/sha256/) { sub(/sha256 ".*"/, "sha256 \""sha"\"") } }
+            { print }
+          ' Casks/notepadx.rb > Casks/notepadx.rb.tmp && mv Casks/notepadx.rb.tmp Casks/notepadx.rb
+
+      - name: Update Formula
+        env:
+          VERSION: ${{ github.event.client_payload.version }}
+          SOURCE_SHA256: ${{ github.event.client_payload.source_sha256 }}
+        run: |
+          sed -i "s|url \"https://github.com/szabadkai/NotepadX/archive/refs/tags/v.*\.tar\.gz\"|url \"https://github.com/szabadkai/NotepadX/archive/refs/tags/v${VERSION}.tar.gz\"|" Formula/notepadx.rb
+          sed -i "s/sha256 \".*\"/sha256 \"$SOURCE_SHA256\"/" Formula/notepadx.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/notepadx.rb Formula/notepadx.rb
+          git commit -m "Update to v${{ github.event.client_payload.version }}"
+          git push
